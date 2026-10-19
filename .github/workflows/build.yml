@@ -1,0 +1,467 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "**" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Accept Android Licenses
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Generate All Project Files
+        run: |
+          mkdir -p gradle/wrapper
+          mkdir -p app/src/main/java/com/editor/video
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/values-night
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
+
+          # 1. settings.gradle.kts
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "VideoEditor"
+          include(":app")
+          EOF
+
+          # 2. build.gradle.kts (Root)
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.5.2" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.0" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false
+          }
+          EOF
+
+          # 3. gradle.properties
+          cat << 'EOF' > gradle.properties
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          kotlin.code.style=official
+          EOF
+
+          # 4. gradle-wrapper.properties
+          cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https\://services.gradle.org/distributions/gradle-8.9-bin.zip
+          networkTimeout=10000
+          validateDistributionUrl=true
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+
+          # 5. app/build.gradle.kts
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+
+          android {
+              namespace = "com.editor.video"
+              compileSdk = 36
+
+              defaultConfig {
+                  applicationId = "com.editor.video"
+                  minSdk = 26
+                  targetSdk = 36
+                  versionCode = 1
+                  versionName = "1.0.0"
+              }
+
+              buildTypes {
+                  release {
+                      isMinifyEnabled = false
+                  }
+                  debug {
+                      isMinifyEnabled = false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              buildFeatures {
+                  compose = true
+              }
+          }
+
+          dependencies {
+              implementation("androidx.core:core-ktx:1.13.1")
+              implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+              implementation("androidx.activity:activity-compose:1.9.3")
+
+              val composeBom = platform("androidx.compose:compose-bom:2024.10.00")
+              implementation(composeBom)
+              implementation("androidx.compose.ui:ui")
+              implementation("androidx.compose.ui:ui-graphics")
+              implementation("androidx.compose.ui:ui-tooling-preview")
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+
+              val media3Version = "1.4.1"
+              implementation("androidx.media3:media3-exoplayer:$media3Version")
+              implementation("androidx.media3:media3-ui:$media3Version")
+              implementation("androidx.media3:media3-transformer:$media3Version")
+              implementation("androidx.media3:media3-effect:$media3Version")
+              implementation("androidx.media3:media3-common:$media3Version")
+
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+              implementation("com.google.guava:guava:33.3.0-android")
+          }
+          EOF
+
+          # 6. AndroidManifest.xml
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="Pro Video Studio"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.VideoEditor">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+                      android:theme="@style/Theme.VideoEditor">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          # 7. Resources
+          cat << 'EOF' > app/src/main/res/values/strings.xml
+          <resources>
+              <string name="app_name">Pro Video Studio</string>
+          </resources>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/values/colors.xml
+          <resources>
+              <color name="primary">#6750A4</color>
+              <color name="primary_container">#EADDFF</color>
+              <color name="background">#FEF7FF</color>
+          </resources>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/values/themes.xml
+          <resources>
+              <style name="Theme.VideoEditor" parent="android:Theme.Material.NoActionBar">
+                  <item name="android:statusBarColor">@color/background</item>
+                  <item name="android:windowLightStatusBar">true</item>
+              </style>
+          </resources>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/values-night/themes.xml
+          <resources>
+              <style name="Theme.VideoEditor" parent="android:Theme.Material.NoActionBar">
+                  <item name="android:statusBarColor">#141218</item>
+                  <item name="android:windowLightStatusBar">false</item>
+              </style>
+          </resources>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/drawable/ic_launcher_foreground.xml
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#6750A4" android:pathData="M34,28L74,28A6,6 0 0,1 80,34L80,74A6,6 0 0,1 74,80L34,80A6,6 0 0,1 28,74L28,34A6,6 0 0,1 34,28z" />
+              <path android:fillColor="#FFFFFF" android:pathData="M48,40L64,54L48,68z" />
+          </vector>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/primary_container" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          # 8. VideoProcessorEngine.kt
+          cat << 'EOF' > app/src/main/java/com/editor/video/VideoProcessorEngine.kt
+          package com.editor.video
+
+          import android.content.ContentValues
+          import android.content.Context
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Environment
+          import android.provider.MediaStore
+          import androidx.annotation.OptIn
+          import androidx.media3.common.Effect
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.audio.AudioProcessor
+          import androidx.media3.common.audio.SonicAudioProcessor
+          import androidx.media3.common.util.UnstableApi
+          import androidx.media3.effect.Contrast
+          import androidx.media3.effect.HslAdjustment
+          import androidx.media3.effect.Presentation
+          import androidx.media3.effect.RgbFilter
+          import androidx.media3.effect.SpeedChangeEffect
+          import androidx.media3.transformer.Composition
+          import androidx.media3.transformer.EditedMediaItem
+          import androidx.media3.transformer.EditedMediaItemSequence
+          import androidx.media3.transformer.Effects
+          import androidx.media3.transformer.ExportException
+          import androidx.media3.transformer.ExportResult
+          import androidx.media3.transformer.ProgressHolder
+          import androidx.media3.transformer.Transformer
+          import kotlinx.coroutines.CoroutineScope
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.Job
+          import kotlinx.coroutines.delay
+          import kotlinx.coroutines.isActive
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.withContext
+          import java.io.File
+          import java.io.FileInputStream
+
+          @OptIn(UnstableApi::class)
+          class VideoProcessorEngine(private val context: Context) {
+
+              private var activeTransformer: Transformer? = null
+              private var progressJob: Job? = null
+              private var activeTempFile: File? = null
+
+              fun trimVideo(
+                  inputUri: Uri,
+                  startMs: Long,
+                  endMs: Long,
+                  scope: CoroutineScope,
+                  onProgress: (Int) -> Unit,
+                  onSuccess: (Uri) -> Unit,
+                  onError: (String) -> Unit
+              ) {
+                  val clippingConfig = MediaItem.ClippingConfiguration.Builder()
+                      .setStartPositionMs(startMs)
+                      .setEndPositionMs(endMs)
+                      .build()
+
+                  val mediaItem = MediaItem.Builder()
+                      .setUri(inputUri)
+                      .setClippingConfiguration(clippingConfig)
+                      .build()
+
+                  val editedItem = EditedMediaItem.Builder(mediaItem).build()
+                  val composition = Composition.Builder(EditedMediaItemSequence(listOf(editedItem))).build()
+
+                  executeExport(composition, scope, onProgress, onSuccess, onError)
+              }
+
+              fun joinVideos(
+                  uris: List<Uri>,
+                  scope: CoroutineScope,
+                  onProgress: (Int) -> Unit,
+                  onSuccess: (Uri) -> Unit,
+                  onError: (String) -> Unit
+              ) {
+                  if (uris.isEmpty()) {
+                      onError("No videos selected for merging.")
+                      return
+                  }
+
+                  val editedItems = uris.map { uri ->
+                      EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
+                  }
+
+                  val composition = Composition.Builder(EditedMediaItemSequence(editedItems)).build()
+                  executeExport(composition, scope, onProgress, onSuccess, onError)
+              }
+
+              fun editVideo(
+                  videoUri: Uri,
+                  speed: Float,
+                  brightness: Float,
+                  contrast: Float,
+                  saturation: Float,
+                  grayscale: Boolean,
+                  aspectRatioOption: AspectRatioOption,
+                  muteAudio: Boolean,
+                  replacementAudioUri: Uri?,
+                  scope: CoroutineScope,
+                  onProgress: (Int) -> Unit,
+                  onSuccess: (Uri) -> Unit,
+                  onError: (String) -> Unit
+              ) {
+                  val videoEffects = mutableListOf<Effect>()
+
+                  if (grayscale) {
+                      videoEffects.add(RgbFilter.createGrayscaleFilter())
+                  } else {
+                      if (saturation != 0f || brightness != 0f) {
+                          videoEffects.add(
+                              HslAdjustment.Builder()
+                                  .adjustSaturation(saturation)
+                                  .adjustLightness(brightness)
+                                  .build()
+                          )
+                      }
+                  }
+
+                  if (contrast != 0f) {
+                      videoEffects.add(Contrast(contrast))
+                  }
+
+                  when (aspectRatioOption) {
+                      AspectRatioOption.ORIGINAL -> Unit
+                      AspectRatioOption.RATIO_16_9 -> {
+                          videoEffects.add(Presentation.createForAspectRatio(16f / 9f, Presentation.LAYOUT_SCALE_TO_FIT))
+                      }
+                      AspectRatioOption.RATIO_9_16 -> {
+                          videoEffects.add(Presentation.createForAspectRatio(9f / 16f, Presentation.LAYOUT_SCALE_TO_FIT))
+                      }
+                      AspectRatioOption.RATIO_1_1 -> {
+                          videoEffects.add(Presentation.createForAspectRatio(1f, Presentation.LAYOUT_SCALE_TO_FIT))
+                      }
+                      AspectRatioOption.RATIO_4_3 -> {
+                          videoEffects.add(Presentation.createForAspectRatio(4f / 3f, Presentation.LAYOUT_SCALE_TO_FIT))
+                      }
+                  }
+
+                  val audioProcessors = mutableListOf<AudioProcessor>()
+                  if (speed != 1.0f) {
+                      videoEffects.add(SpeedChangeEffect(speed))
+                      val sonic = SonicAudioProcessor().apply { setSpeed(speed) }
+                      audioProcessors.add(sonic)
+                  }
+
+                  val primaryMediaItem = MediaItem.fromUri(videoUri)
+                  val shouldStripAudio = muteAudio || (replacementAudioUri != null)
+
+                  val editedVideoItem = EditedMediaItem.Builder(primaryMediaItem)
+                      .setRemoveAudio(shouldStripAudio)
+                      .setEffects(Effects(audioProcessors, videoEffects))
+                      .build()
+
+                  val sequences = mutableListOf<EditedMediaItemSequence>()
+                  sequences.add(EditedMediaItemSequence(listOf(editedVideoItem)))
+
+                  if (replacementAudioUri != null && !muteAudio) {
+                      val audioItem = EditedMediaItem.Builder(MediaItem.fromUri(replacementAudioUri)).build()
+                      sequences.add(EditedMediaItemSequence(listOf(audioItem)))
+                  }
+
+                  val composition = Composition.Builder(sequences).build()
+                  executeExport(composition, scope, onProgress, onSuccess, onError)
+              }
+
+              private fun executeExport(
+                  composition: Composition,
+                  scope: CoroutineScope,
+                  onProgress: (Int) -> Unit,
+                  onSuccess: (Uri) -> Unit,
+                  onError: (String) -> Unit
+              ) {
+                  cancelExport()
+
+                  val tempFile = File(context.cacheDir, "export_${System.currentTimeMillis()}.mp4")
+                  activeTempFile = tempFile
+
+                  val transformer = Transformer.Builder(context)
+                      .addListener(object : Transformer.Listener {
+                          override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                              progressJob?.cancel()
+                              scope.launch(Dispatchers.IO) {
+                                  try {
+                                      val savedUri = saveToMediaStore(tempFile)
+                                      tempFile.delete()
+                                      withContext(Dispatchers.Main) { onSuccess(savedUri) }
+                                  } catch (e: Exception) {
+                                      withContext(Dispatchers.Main) { onError("Failed to save to gallery: ${e.localizedMessage}") }
+                                  }
+                              }
+                          }
+
+                          override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                              progressJob?.cancel()
+                              tempFile.delete()
+                              scope.launch(Dispatchers.Main) { onError("Export failed: ${exportException.localizedMessage}") }
+                          }
+                      })
+                      .build()
+
+                  activeTransformer = transformer
+                  transformer.start(composition, tempFile.absolutePath)
+
+                  val progressHolder = ProgressHolder()
+                  progressJob = scope.launch(Dispatchers.Default) {
+                      while (isActive) {
+                          val state = transformer.getProgress(progressHolder)
+                          if (state == Transformer.PROGRESS_STATE_AVAILABLE) {
+                              withContext(Dispatchers.Main) { onProgress(progressHolder.progress) }
+                          }
+                          delay(200)
+                      }
+                  }
+              }
+
+              fun cancelExport() {
+                  progressJob?.cancel()
+                  progressJob = null
+                  try { activeTransformer?.cancel() } catch (_: Exception) {}
+                  activeTransformer = null
+                  activeTempFile?.delete()
+                  activeTempFile = null
+              }
+
+              private fun saveToMediaStore(sourceFile: File): Uri {
+                  val resolver = context.contentResolver
+                  val contentValues = ContentValues().apply {
+                      put(MediaStore.Video.Media.DISPLAY_NAME, "Edited_${System.currentTimeMillis()}.mp4")
+                      put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                      put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/VideoEditor")
+                      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                          put(MediaStore.Video.Media.IS_PENDING, 1)
+                      }
+                  }
+
+                  val targetUri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+                      ?: throw IllegalStateException("Cannot create MediaStore destination record.")
+
+                  resolver.openOutputStream(targetUri)?.use { outStream ->
+                      FileInputStream(sourceFile).use { inStream -> inStream.copyTo(outStream) }
+                  } ?: throw IllegalStateException("Cannot write output stream.")
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                      contentValues.clear()
+                      contentValues.put(MediaStore.Video.Media.IS_PENDING, 0)
+                      resolver.update(targetUri, contentValues, null, nu
